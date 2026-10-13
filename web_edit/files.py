@@ -8,6 +8,7 @@ import shutil
 import stat
 import tempfile
 import threading
+from bisect import bisect_left
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
@@ -25,6 +26,9 @@ IMAGE_TYPES = {
     "image/vnd.microsoft.icon",
     "image/svg+xml",
 }
+CONTROL_BYTES = bytes([*range(0x09), 0x0B, 0x0C, *range(0x0E, 0x20)])
+# Python 3.13+ can skip the URL parsing that guess_type does for every filename.
+guess_file_type = getattr(mimetypes, "guess_file_type", mimetypes.guess_type)
 
 
 class FileError(Exception):
@@ -53,30 +57,90 @@ def decode_text(data):
         raise FileError(
             "This file is not UTF-8 text. You can download it instead.", 415
         )
-    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", text):
+    # UTF-8 only uses these bytes for control characters; translate beats a regex.
+    if len(data.translate(None, CONTROL_BYTES)) != len(data):
         raise FileError(
             "This looks like a binary file. You can download it instead.", 415
         )
     return text
 
 
+def matching_blocks(old, new):
+    """Yield (old index, new index, size) for runs of matching lines.
+
+    SequenceMatcher alone slows down sharply on long files with scattered edits.
+    As in patience diff, lines that occur once in each version anchor the
+    comparison, so SequenceMatcher only aligns the gaps between anchors.
+    """
+    old_counts, new_counts = Counter(old), Counter(new)
+    positions = {line: i for i, line in enumerate(old) if old_counts[line] == 1}
+    candidates = [
+        (positions[line], j)
+        for j, line in enumerate(new)
+        if new_counts[line] == 1 and line in positions
+    ]
+    # Keep the longest series of candidates in the same order in both versions.
+    tails, ends, links = [], [], []
+    for index, (i, _) in enumerate(candidates):
+        length = bisect_left(tails, i)
+        links.append(ends[length - 1] if length else None)
+        if length == len(tails):
+            tails.append(i)
+            ends.append(index)
+        else:
+            tails[length] = i
+            ends[length] = index
+    anchors = [(len(old), len(new), 0)]
+    index = ends[-1] if ends else None
+    while index is not None:
+        anchors.append((*candidates[index], 1))
+        index = links[index]
+    anchors.append((0, 0, 0))
+    a = b = 0
+    for i, j, size in reversed(anchors):
+        if i < a:
+            continue  # Already matched by extending the previous block.
+        # Extend each anchor backward, compare the remaining gap, then extend forward.
+        start_a, start_b = i, j
+        while a < start_a and b < start_b and old[start_a - 1] == new[start_b - 1]:
+            start_a, start_b = start_a - 1, start_b - 1
+        if a < start_a and b < start_b:
+            # SequenceMatcher's autojunk heuristic handles repetitive documents.
+            matcher = SequenceMatcher(None, old[a:start_a], new[b:start_b])
+            for match in matcher.get_matching_blocks():
+                yield a + match.a, b + match.b, match.size
+        a, b = i + size, j + size
+        while a < len(old) and b < len(new) and old[a] == new[b]:
+            a, b = a + 1, b + 1
+        yield start_a, start_b, a - start_a
+
+
 def preserve_endings(original, edited):
     """Keep the endings of unchanged lines, including files with mixed endings."""
-    old_lines = re.split(r"\r\n|\r|\n", original)
-    old_endings = re.findall(r"\r\n|\r|\n", original)
-    new_lines = re.split(r"\r\n|\r|\n", edited)
-    default = Counter(old_endings).most_common(1)[0][0] if old_endings else "\n"
+    edited = edited.replace("\r\n", "\n").replace("\r", "\n")
+    crlf = original.count("\r\n")
+    counts = {
+        "\r\n": crlf,
+        "\r": original.count("\r") - crlf,
+        "\n": original.count("\n") - crlf,
+    }
+    used = [ending for ending, count in counts.items() if count]
+    if len(used) < 2:
+        # Files with one kind of line ending need no comparison.
+        return edited.replace("\n", used[0]) if used else edited
+    parts = re.split(r"(\r\n|\r|\n)", original)
+    old_lines, old_endings = parts[::2], parts[1::2]
+    new_lines = edited.split("\n")
+    default = Counter(old_endings).most_common(1)[0][0]
     endings = [default] * (len(new_lines) - 1)
-    # SequenceMatcher's autojunk heuristic handles repetitive documents.
-    for match in SequenceMatcher(None, old_lines, new_lines).get_matching_blocks():
-        for offset in range(match.size):
-            old_index, new_index = match.a + offset, match.b + offset
-            if old_index < len(old_endings) and new_index < len(endings):
-                endings[new_index] = old_endings[old_index]
-    return "".join(
-        line + (endings[i] if i < len(endings) else "")
-        for i, line in enumerate(new_lines)
-    )
+    for old_index, new_index, size in matching_blocks(old_lines, new_lines):
+        # The final line of each version has no ending.
+        size = min(size, len(old_endings) - old_index, len(endings) - new_index)
+        if size > 0:
+            endings[new_index : new_index + size] = old_endings[
+                old_index : old_index + size
+            ]
+    return "".join(line + ending for line, ending in zip(new_lines, endings + [""]))
 
 
 class FileStore:
@@ -114,7 +178,7 @@ class FileStore:
         return path
 
     def image_type(self, path):
-        mime = mimetypes.guess_type(path.name)[0]
+        mime = guess_file_type(path.name)[0]
         return mime if mime in IMAGE_TYPES else None
 
     def browse(self, relative):
@@ -123,32 +187,36 @@ class FileStore:
             if not folder.exists():
                 raise FileNotFoundError()
             raise FileError("This is not a folder.")
+        path = "" if folder == self.root else folder.relative_to(self.root).as_posix()
+        prefix = f"{path}/" if path else ""
         entries = []
-        for child in folder.iterdir():
-            if child.name.startswith(".web-edit-"):
-                continue
-            try:
-                info = child.lstat()
-            except FileNotFoundError:
-                continue
-            kind = "directory" if stat.S_ISDIR(info.st_mode) else "file"
-            if stat.S_ISLNK(info.st_mode):
-                kind = "symlink"
-            elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-                kind = "special"
-            entries.append(
-                {
-                    "name": child.name,
-                    "path": child.relative_to(self.root).as_posix(),
-                    "kind": kind,
-                    "size": info.st_size,
-                    "modified": info.st_mtime,
-                    "delete_version": delete_version(info),
-                    "preview": kind == "file"
-                    and info.st_size < IMAGE_LIMIT
-                    and bool(self.image_type(child)),
-                }
-            )
+        # scandir and plain strings avoid creating Path objects for every entry.
+        with os.scandir(folder) as children:
+            for child in children:
+                if child.name.startswith(".web-edit-"):
+                    continue
+                try:
+                    info = child.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                kind = "directory" if stat.S_ISDIR(info.st_mode) else "file"
+                if stat.S_ISLNK(info.st_mode):
+                    kind = "symlink"
+                elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                    kind = "special"
+                entries.append(
+                    {
+                        "name": child.name,
+                        "path": prefix + child.name,
+                        "kind": kind,
+                        "size": info.st_size,
+                        "modified": info.st_mtime,
+                        "delete_version": delete_version(info),
+                        "preview": kind == "file"
+                        and info.st_size < IMAGE_LIMIT
+                        and bool(self.image_type(child)),
+                    }
+                )
         entries.sort(
             key=lambda item: (
                 item["kind"] != "directory",
@@ -157,9 +225,7 @@ class FileStore:
             )
         )
         return {
-            "path": ""
-            if folder == self.root
-            else folder.relative_to(self.root).as_posix(),
+            "path": path,
             "root_name": self.root.name or "/",
             "entries": entries,
         }
@@ -192,18 +258,18 @@ class FileStore:
     def text(self, relative):
         with self.lock:
             path = self.regular_file(relative)
-            before = version(path)
             if path.stat().st_size > TEXT_LIMIT:
                 raise FileError(
                     "Text editing is limited to 10 MiB. You can download this file.",
                     413,
                 )
             data = path.read_bytes()
-            if version(path) != before:
+            current = hashlib.sha256(data).hexdigest()
+            if version(path) != current:
                 raise FileError(
                     "The file changed while opening it. Please try again.", 409
                 )
-            return {"path": relative, "content": decode_text(data), "version": before}
+            return {"path": relative, "content": decode_text(data), "version": current}
 
     def check_destination(self, relative, expected):
         path = self.path(relative, file=True)
@@ -233,12 +299,16 @@ class FileStore:
             target.parent.mkdir(parents=True, exist_ok=True)
             self.path(relative, file=True)
             temporary = None
+            # Hash while copying, so the version matches what was written without rereading.
+            digest = hashlib.sha256()
             try:
                 with tempfile.NamedTemporaryFile(
                     prefix=".web-edit-", dir=target.parent, delete=False
                 ) as output:
                     temporary = Path(output.name)
-                    shutil.copyfileobj(source, output, length=1024 * 1024)
+                    while chunk := source.read(1024 * 1024):
+                        digest.update(chunk)
+                        output.write(chunk)
                     output.flush()
                     os.fsync(output.fileno())
                 self.check_destination(relative, expected)
@@ -257,7 +327,7 @@ class FileStore:
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
-            return {"path": relative, "version": version(target)}
+            return {"path": relative, "version": digest.hexdigest()}
 
     def save_text(self, relative, content, expected):
         from io import BytesIO

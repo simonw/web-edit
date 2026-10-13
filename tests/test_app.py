@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import stat
@@ -8,7 +9,13 @@ import pytest
 from starlette.testclient import TestClient
 
 from web_edit.app import create_app
-from web_edit.files import IMAGE_LIMIT, TEXT_LIMIT, FileError, FileStore
+from web_edit.files import (
+    IMAGE_LIMIT,
+    TEXT_LIMIT,
+    FileError,
+    FileStore,
+    preserve_endings,
+)
 
 
 @pytest.fixture
@@ -55,6 +62,16 @@ def test_browse(client, tmp_path):
     assert client.get("/api/browse", params={"path": "missing"}).status_code == 404
 
 
+def test_browse_nested_paths(client, tmp_path):
+    (tmp_path / "a" / "b").mkdir(parents=True)
+    (tmp_path / "a" / "b" / "c.txt").write_text("c")
+    root = client.get("/api/browse").json()
+    assert [entry["path"] for entry in root["entries"]] == ["a"]
+    nested = client.get("/api/browse", params={"path": "a//b/"}).json()
+    assert nested["path"] == "a/b"
+    assert [entry["path"] for entry in nested["entries"]] == ["a/b/c.txt"]
+
+
 def test_create_read_edit_download(client, tmp_path):
     path = "nested/a & #? café.txt"
     created = save(client, path, "Hello 👋\n")
@@ -64,6 +81,8 @@ def test_create_read_edit_download(client, tmp_path):
     changed = save(client, path, "Updated\n", text["version"])
     assert changed.status_code == 200
     assert changed.json()["version"] != text["version"]
+    reread = client.get("/api/text", params={"path": path}).json()
+    assert reread["version"] == changed.json()["version"]
     downloaded = client.get("/api/download", params={"path": path})
     assert downloaded.content == b"Updated\n"
     assert "attachment" in downloaded.headers["content-disposition"]
@@ -96,7 +115,9 @@ def test_invalid_unicode(client):
         (b"one\r\ntwo\r\n", "one\nchanged\n", b"one\r\nchanged\r\n"),
         (b"one\rtwo\r", "one\nchanged\n", b"one\rchanged\r"),
         (b"one\ntwo\n", "one\nchanged\n", b"one\nchanged\n"),
+        (b"one\ntwo\n", "one\r\nchanged\r", b"one\nchanged\n"),
         (b"one\r\ntwo\nthree\r", "one\ntwo\nthree\n", b"one\r\ntwo\nthree\r"),
+        (b"a\r\n\r\nb\n\nc\r\n", "a\n\nb\n\nnew\nc\n", b"a\r\n\r\nb\n\nnew\r\nc\r\n"),
         (b"\xef\xbb\xbfone\r\n", "changed\n", b"\xef\xbb\xbfchanged\r\n"),
         (b"one", "two", b"two"),
         (b"", "new\n", b"new\n"),
@@ -108,6 +129,18 @@ def test_preserves_line_endings_and_bom(client, tmp_path, original, edited, expe
     read = client.get("/api/text", params={"path": path.name}).json()
     assert save(client, path.name, edited, read["version"]).status_code == 200
     assert path.read_bytes() == expected
+
+
+def test_preserves_mixed_endings_with_scattered_edits():
+    lines = [(f"line {i}", "\r\n" if i % 3 else "\n") for i in range(3000)]
+    original = "".join(line + ending for line, ending in lines)
+    for i in range(0, len(lines), 7):
+        lines[i] = (f"changed {i}", "\r\n")
+    lines.insert(1500, ("inserted", "\r\n"))
+    del lines[10]
+    edited = "".join(line + "\n" for line, _ in lines)
+    expected = "".join(line + ending for line, ending in lines)
+    assert preserve_endings(original, edited) == expected
 
 
 def test_preserves_permissions(client, tmp_path):
@@ -160,6 +193,7 @@ def test_upload_spooled_file_custom_path_and_binary(client, tmp_path):
     data = b"\x00\xff" * (1024 * 1024)
     response = upload(client, "new/folder/custom.bin", data)
     assert response.status_code == 201
+    assert response.json()["version"] == hashlib.sha256(data).hexdigest()
     assert (tmp_path / "new/folder/custom.bin").read_bytes() == data
     assert (
         client.get("/api/download", params={"path": "new/folder/custom.bin"}).content
