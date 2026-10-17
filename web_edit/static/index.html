@@ -35,7 +35,7 @@
     </section>
     <section id="editor-section" aria-label="Text editor" hidden>
       <div class="section-heading"><div class="editor-title"><button id="back" class="secondary">← Files</button><h1 id="editor-title">New file</h1></div>
-        <div class="actions"><a id="editor-download" class="button secondary" download>Download</a><button id="save">Save</button></div>
+        <div class="actions"><button id="editor-copy" class="secondary">Copy</button><a id="editor-download" class="button secondary" download>Download</a><button id="save">Save</button></div>
       </div>
       <label id="new-path-label" for="new-path">File path <input id="new-path" placeholder="notes/hello.txt" autocomplete="off" spellcheck="false"></label>
       <div class="editor-meta"><span id="save-state" role="status">Unsaved</span><span>UTF-8 · <span id="language-label">Plain text</span></span></div>
@@ -43,7 +43,9 @@
       <p class="hint">Save with <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd>. Your changes stay here until you save.</p>
     </section>
     <section id="viewer" aria-label="File preview" hidden>
-      <div class="section-heading"><div class="editor-title"><button id="viewer-back" class="secondary">← Files</button><h1 id="viewer-title"></h1></div><a id="viewer-download" class="button" download>Download</a></div>
+      <div class="section-heading"><div class="editor-title"><button id="viewer-back" class="secondary">← Files</button><h1 id="viewer-title"></h1></div>
+        <div class="actions"><button id="viewer-copy" class="secondary" hidden>Copy image</button><a id="viewer-download" class="button" download>Download</a></div>
+      </div>
       <div id="viewer-content"></div>
     </section>
     <section id="uploads" aria-label="Upload queue" hidden>

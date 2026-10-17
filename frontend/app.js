@@ -18,6 +18,10 @@ const apiURL = (endpoint, path) => `./api/${endpoint}?path=${encodeURIComponent(
 let currentFolder = "", rootName = "Files", editor = null, editingPath = "", fileVersion = null;
 let savedText = "", isNew = false, saving = false, currentHash = "", navigation = 0;
 const language = new Compartment();
+// Images reach the clipboard as PNG, which needs the async clipboard API (HTTPS or localhost).
+const canCopyImages = Boolean(navigator.clipboard?.write && window.ClipboardItem);
+// The largest canvas iOS Safari allows; keeps PNG conversion consistent across browsers.
+const COPY_PIXEL_LIMIT = 4096 * 4096;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -58,6 +62,46 @@ async function api(endpoint, options = {}) {
   const data = await response.json();
   if (!response.ok) throw Object.assign(new Error(data.error || `Request failed (${response.status}).`), { status: response.status, data });
   return data;
+}
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  // Plain HTTP, such as a Tailscale IP address, has no async clipboard API.
+  const focused = document.activeElement;
+  const area = element("textarea");
+  area.value = text; area.readOnly = true;
+  area.style.cssText = "position: fixed; top: 0; left: -9999px; font-size: 16px;";
+  document.body.append(area);
+  area.select(); area.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy");
+  area.remove(); focused?.focus({ preventScroll: true });
+  if (!copied) throw new Error("Copy failed.");
+}
+function imagePNG(image) {
+  return new Promise((resolve, reject) => {
+    const canvas = element("canvas");
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    canvas.getContext("2d").drawImage(image, 0, 0);
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Conversion failed.")), "image/png");
+  });
+}
+async function copyImage() {
+  const image = $("viewer-content").querySelector("img");
+  const path = $("viewer-title").textContent;
+  const pixels = image.naturalWidth * image.naturalHeight;
+  if (!pixels) { notify("This image has no fixed size, so it cannot be copied.", true); return; }
+  if (pixels > COPY_PIXEL_LIMIT) { notify("Images over 16 megapixels are too large to copy. You can download it instead.", true); return; }
+  // Safari only allows clipboard writes started directly by the click, so pass promises.
+  const types = { "image/png": imagePNG(image) };
+  if (/\.svg$/i.test(path)) {
+    types["text/plain"] = fetch(apiURL("image", path)).then(async (response) => {
+      if (!response.ok) throw new Error("Request failed.");
+      return new Blob([await response.text()], { type: "text/plain" });
+    });
+  }
+  try {
+    await navigator.clipboard.write([new ClipboardItem(types)]);
+    notify(`Copied ${path} to the clipboard.`);
+  } catch { notify("Could not copy this image to the clipboard.", true); }
 }
 function dirty() { return editor && editor.state.doc.toString() !== savedText; }
 function updateSaveState() {
@@ -218,15 +262,20 @@ function openViewer(path, message, preview) {
   $("viewer-title").textContent = path;
   $("viewer-download").href = apiURL("download", path);
   $("viewer-content").replaceChildren();
+  $("viewer-copy").hidden = !preview || !canCopyImages;
+  $("viewer-copy").disabled = true;
   if (preview) {
     const loading = loadingState("Loading image…");
     const image = element("img");
     image.alt = path; image.hidden = true;
-    image.addEventListener("load", () => { loading.remove(); image.hidden = false; });
+    image.addEventListener("load", () => {
+      if (!image.isConnected) return;
+      loading.remove(); image.hidden = false; $("viewer-copy").disabled = false;
+    });
     image.addEventListener("error", () => {
       if (!image.isConnected) return;
       loading.replaceWith(element("p", "", "This image cannot be previewed. You can download it instead."));
-      image.remove();
+      image.remove(); $("viewer-copy").hidden = true;
     });
     $("viewer-content").append(loading, image);
     image.src = apiURL("image", path);
@@ -397,6 +446,12 @@ $("new-file").addEventListener("click", () => { location.hash = routeURL("new", 
 $("refresh").addEventListener("click", route);
 for (const id of ["back", "viewer-back"]) $(id).addEventListener("click", () => { location.hash = routeURL("browse", currentFolder); });
 $("save").addEventListener("click", save);
+$("editor-copy").addEventListener("click", async () => {
+  if (!editor) return;
+  try { await copyText(editor.state.doc.toString()); notify("Copied to the clipboard."); }
+  catch { notify("Could not copy to the clipboard.", true); }
+});
+$("viewer-copy").addEventListener("click", copyImage);
 $("new-path").addEventListener("input", () => { if (editor) { const [name, support] = languageFor($("new-path").value); $("language-label").textContent = name; editor.dispatch({ effects: language.reconfigure(support) }); } });
 window.addEventListener("hashchange", route);
 window.addEventListener("beforeunload", (event) => { if (dirty() || saving || activeUploads) { event.preventDefault(); event.returnValue = ""; } });
