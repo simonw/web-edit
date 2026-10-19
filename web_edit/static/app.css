@@ -8,12 +8,14 @@ button, .button { font: inherit; font-weight: 600; font-size: 14px; display: inl
 button:hover, .button:hover { filter: brightness(.93); text-decoration: none; }
 button:disabled { cursor: default; opacity: .5; }
 button.secondary, .button.secondary { background: white; color: #394657; border-color: var(--border); }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #74b6ff; outline-offset: 3px; }
-.app-header { display: flex; justify-content: space-between; align-items: center; padding: 20px max(24px, calc((100% - 1080px) / 2)); gap: 20px; border-bottom: 1px solid var(--border); background: white; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, .cm-collapsedLines:focus-visible { outline: 3px solid #74b6ff; outline-offset: 3px; }
+.app-header { padding: 20px 0; border-bottom: 1px solid var(--border); background: white; }
+.content-container { width: 100%; max-width: 1128px; margin-left: auto; margin-right: auto; padding-left: 24px; padding-right: 24px; }
+.header-content { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; color: #202b3a; white-space: nowrap; }
 .brand-icon { background: #e2ece6; padding: 8px 6px; border-radius: 8px; color: var(--accent); font-size: 14px; letter-spacing: -1px; }
 .root-label { color: #697687; font: 13px ui-monospace, monospace; overflow-wrap: anywhere; }
-main { max-width: 1128px; margin: 40px auto; padding: 0 24px; }
+main { margin: 40px 0; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 h1 { margin: 0; font-size: 30px; font-weight: 650; letter-spacing: -.6px; overflow-wrap: anywhere; }
 h2 { margin: 0; font-size: 22px; }
@@ -49,7 +51,7 @@ button.danger { background: #a13227; border-color: #a13227; color: white; }
 .editor-title { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .editor-title h1 { font-size: 21px; }
 label { display: block; font-size: 13px; font-weight: 600; }
-input:not([type=file]) { display: block; width: 100%; min-height: 44px; font: 16px ui-monospace, monospace; margin: 8px 0 20px; padding: 10px 12px; border: 1px solid #ccd4dc; border-radius: 6px; background: white; color: #202b3a; }
+input:not([type=file]):not([type=checkbox]) { display: block; width: 100%; min-height: 44px; font: 16px ui-monospace, monospace; margin: 8px 0 20px; padding: 10px 12px; border: 1px solid #ccd4dc; border-radius: 6px; background: white; color: #202b3a; }
 .editor-meta { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; color: #687584; background: #edf1f3; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; padding: 12px 16px; }
 #editor { background: white; border: 1px solid var(--border); border-radius: 0 0 8px 8px; overflow: hidden; }
 .cm-editor { min-height: 55vh; }
@@ -77,9 +79,43 @@ dialog { max-width: min(440px, calc(100% - 28px)); border: 1px solid var(--borde
 dialog::backdrop { background: #17253166; }
 dialog p { line-height: 1.6; overflow-wrap: anywhere; }
 dialog .actions { justify-content: flex-end; }
+select { min-height: 44px; font: inherit; color: inherit; background: white; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.diff-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+.diff-controls label { display: flex; gap: 8px; align-items: center; }
+#diff-save-state { font-size: 13px; }
+#diff-list { max-height: 160px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: white; margin-bottom: 18px; }
+#diff-list:empty { display: none; }
+.diff-file-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+.diff-file-row:last-child { border-bottom: 0; }
+.diff-file { display: flex; flex: 1; min-width: 0; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 12px; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 13px; }
+button.diff-action { flex-shrink: 0; min-height: 0; margin: 0 12px 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--accent); font-size: 12px; font-weight: normal; }
+button.diff-action:enabled:hover { text-decoration: underline; }
+.diff-file > span { min-width: 0; }
+.diff-file small { flex-shrink: 0; }
+.diff-file-row.selected { background: #e2ece6; }
+.diff-file[aria-current] { font-weight: 600; }
+.diff-file small { color: #536355; font-size: 12px; font-weight: normal; }
+.diff-comparison-area { min-width: 0; width: calc(100% - 48px); max-width: 1080px; padding-left: 0; padding-right: 0; }
+#diff-section[data-layout="split"] .diff-comparison-area { max-width: none; }
+#diff-title { font-size: 16px; overflow-wrap: anywhere; white-space: pre-wrap; }
+#diff-metadata p { margin: 8px 0; overflow-wrap: anywhere; }
+#diff-labels { display: flex; gap: 16px; padding: 10px; background: #edf1f3; font-size: 12px; }
+#diff-labels.split { gap: 0; }
+#diff-labels.split > span { width: 50%; min-width: 0; overflow-wrap: anywhere; }
+#diff-labels.unified > span:first-child::after { content: " →"; }
+#diff-editor { border: 1px solid var(--border); background: white; }
+#diff-editor:empty, #diff-labels:empty { display: none; }
+/* Let the page scroll vertically. Each full-height pane retains horizontal scrolling. */
+#diff-editor .cm-mergeViewEditors, #diff-editor .cm-mergeViewEditor { min-width: 0; }
+#diff-editor .cm-editor { min-height: 0; }
+#diff-editor .cm-scroller { overflow-x: auto; }
+#diff-editor .cm-collapsedLines { cursor: pointer; }
 @media (max-width: 640px) {
-  .app-header { padding: 14px 16px; }
-  main { margin-top: 24px; padding: 0 14px; }
+  .app-header { padding: 14px 0; }
+  .content-container { padding-left: 14px; padding-right: 14px; }
+  .header-content { padding-left: 16px; padding-right: 16px; }
+  .diff-comparison-area { width: calc(100% - 28px); padding-left: 0; padding-right: 0; }
+  main { margin-top: 24px; }
   .section-heading { align-items: flex-start; flex-wrap: wrap; gap: 18px; }
   .actions { width: 100%; }
   .actions > * { flex: 1; }

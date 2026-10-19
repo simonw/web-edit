@@ -44,6 +44,7 @@ To protect against [DNS rebinding attacks](https://tailscale.com/docs/reference/
 - Browse folders with inline previews of images smaller than 2 MB.
 - Create and edit UTF-8 text files with bundled CodeMirror 6, including on mobile.
 - Save explicitly, with unsaved-change warnings and checks for external edits.
+- Compare Git changes side by side or in a unified view, edit working-tree text, and stage or unstage files. Requires local Git. Diff is not available on Windows.
 - Copy text to the clipboard, and images under 16 megapixels as PNG over HTTPS or localhost.
 - Upload multiple files with custom paths and names, individual progress bars, and retries.
 - Download files, or delete files and folders with inline confirmation.
@@ -61,3 +62,5 @@ After changing `frontend/app.js`, rebuild and commit the bundled JavaScript:
 npm ci
 npm run build
 ```
+
+For browser tests, install Chromium with `npx playwright install chromium`. Then run `npm run test:frontend`.

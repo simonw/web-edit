@@ -11,15 +11,18 @@
 </head>
 <body>
   <header class="app-header">
-    <a class="brand" href="#"><span class="brand-icon">we</span> web-edit</a>
-    <span class="root-label" id="root-label"></span>
+    <div class="content-container header-content">
+      <a class="brand" href="#"><span class="brand-icon">we</span> web-edit</a>
+      <span class="root-label" id="root-label"></span>
+    </div>
   </header>
   <main>
-    <div id="notice" role="status" aria-live="polite" hidden></div>
-    <section id="browser" aria-label="File browser">
+    <div class="content-container"><div id="notice" role="status" aria-live="polite" hidden></div></div>
+    <section class="content-container" id="browser" aria-label="File browser">
       <div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h1>Files</h1></div>
-        <div class="actions"><button id="refresh" class="secondary">Refresh</button><button id="show-upload" class="secondary">Upload files</button><button id="new-file">New file</button></div>
+        <div class="actions"><button id="refresh" class="secondary">Refresh</button><button id="show-diff" class="secondary" aria-describedby="git-context" disabled>Diff</button><button id="show-upload" class="secondary">Upload files</button><button id="new-file">New file</button></div>
       </div>
+      <p id="git-context" class="hint" role="status">Checking repository…</p>
       <nav id="breadcrumbs" aria-label="Folder breadcrumb"><a href="#browse?path=">Files</a></nav>
       <div class="list-heading"><span>Name</span><span>Size</span><span>Modified</span><span></span></div>
       <div id="file-list" aria-live="polite">
@@ -33,7 +36,7 @@
       </div>
       <p class="hint">Images under 2 MB appear inline. Select a text file to edit it.</p>
     </section>
-    <section id="editor-section" aria-label="Text editor" hidden>
+    <section class="content-container" id="editor-section" aria-label="Text editor" hidden>
       <div class="section-heading"><div class="editor-title"><button id="back" class="secondary">← Files</button><h1 id="editor-title">New file</h1></div>
         <div class="actions"><button id="editor-copy" class="secondary">Copy</button><a id="editor-download" class="button secondary" download>Download</a><button id="save">Save</button></div>
       </div>
@@ -42,12 +45,29 @@
       <div id="editor"></div>
       <p class="hint">Save with <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd>. Your changes stay here until you save.</p>
     </section>
-    <section id="viewer" aria-label="File preview" hidden>
+    <section id="diff-section" aria-label="Git diff" hidden>
+      <div class="content-container">
+      <div class="section-heading"><div><button id="diff-files" class="secondary">← Files</button><h1>Repository changes</h1><p id="diff-repo" class="hint"></p></div>
+        <div class="actions"><button id="diff-refresh" class="secondary">Refresh</button><button id="diff-copy" class="secondary" hidden>Copy edits</button><a id="diff-open" class="button secondary" hidden>Open in editor</a><button id="diff-save" hidden>Save</button></div>
+      </div>
+      <div class="diff-controls">
+        <label>Changes <select id="diff-comparison"><option value="all">All changes</option><option value="unstaged">Unstaged</option><option value="staged">Staged</option></select></label>
+        <label>View <select id="diff-layout"><option value="split">Side by side</option><option value="unified">Unified</option></select></label>
+        <label><input id="diff-wrap" type="checkbox"> Wrap lines</label>
+        <button id="diff-previous" class="secondary" disabled>Previous change</button><button id="diff-next" class="secondary" disabled>Next change</button>
+        <span id="diff-save-state" role="status"></span>
+      </div>
+      <nav id="diff-list" aria-label="Changed files"></nav>
+      </div>
+      <div class="diff-comparison-area content-container"><h2 id="diff-title"></h2><div id="diff-metadata" class="hint"></div><div id="diff-labels"></div><div id="diff-editor"></div></div>
+    </section>
+    <section class="content-container" id="viewer" aria-label="File preview" hidden>
       <div class="section-heading"><div class="editor-title"><button id="viewer-back" class="secondary">← Files</button><h1 id="viewer-title"></h1></div>
         <div class="actions"><button id="viewer-copy" class="secondary" hidden>Copy image</button><a id="viewer-download" class="button" download>Download</a></div>
       </div>
       <div id="viewer-content"></div>
     </section>
+    <div class="content-container">
     <section id="uploads" aria-label="Upload queue" hidden>
       <div class="section-heading"><div><p class="eyebrow">UPLOAD QUEUE</p><h2>Add files</h2></div><button id="close-uploads" class="secondary">Close</button></div>
       <label for="upload-folder">Destination folder <input id="upload-folder" placeholder="Current folder" autocomplete="off" spellcheck="false"></label>
@@ -55,6 +75,7 @@
       <div id="upload-list"></div>
       <div class="upload-footer"><span id="upload-summary" role="status"></span><button id="start-uploads" disabled>Upload files</button></div>
     </section>
+    </div>
   </main>
   <dialog id="confirmation" aria-labelledby="confirmation-title" aria-describedby="confirmation-message">
     <form method="dialog">
